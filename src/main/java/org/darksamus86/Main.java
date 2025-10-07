@@ -3,6 +3,7 @@ package org.darksamus86;
 import org.darksamus86.FeistelCipher.FeistelCipher;
 import org.darksamus86.Hash.Hash;
 import org.darksamus86.StreamCipher.StreamCipher;
+import org.darksamus86.EDS.EDS;
 
 import java.math.BigInteger;
 import java.util.List;
@@ -46,5 +47,21 @@ public class Main {
         System.out.println("Taps: " + taps);
         System.out.println("Cipher bits: " + cipher);
         System.out.println("Decrypted text: " + decryptedText);
+
+        // EDS
+        try {
+            EDS eds = new EDS();
+
+            String message = "Hello from EDS";
+            byte[] signature = eds.signMessage(message);
+
+            System.out.println("Сообщение: " + message);
+            System.out.println("Подпись (hex): " + EDS.toHex(signature));
+            System.out.println("Подпись верна: " + eds.verifyMessage(message, signature));
+
+            System.out.println("\nПубличный ключ (PEM):\n" + eds.getPublicKeyPem());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 }
