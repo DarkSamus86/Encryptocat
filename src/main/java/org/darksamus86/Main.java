@@ -4,6 +4,7 @@ import org.darksamus86.FeistelCipher.FeistelCipher;
 import org.darksamus86.Hash.Hash;
 import org.darksamus86.StreamCipher.StreamCipher;
 import org.darksamus86.EDS.EDS;
+import org.darksamus86.RSA.RSA;
 
 import java.math.BigInteger;
 import java.util.List;
@@ -63,5 +64,30 @@ public class Main {
         } catch (Exception e) {
             e.printStackTrace();
         }
+
+        // RSA
+        String[] keys = RSA.generateKeys();
+        String publicKey = keys[0];   // e,n
+        String privateKey = keys[1];  // d,n
+
+        System.out.println("Открытый ключ: " + publicKey);
+        System.out.println("Закрытый ключ: " + privateKey);
+
+        // Пример шифрования
+        String message = "Hello RSA!";
+        String[] pubParts = publicKey.split(",");
+        long e = Long.parseLong(pubParts[0]);
+        long n = Long.parseLong(pubParts[1]);
+
+        String cipherRsa = RSA.encrypt(message, e, n);
+        System.out.println("\nЗашифрованное сообщение (hex): " + cipherRsa);
+
+        // Пример расшифровки
+        String[] privParts = privateKey.split(",");
+        long d = Long.parseLong(privParts[0]);
+        long n2 = Long.parseLong(privParts[1]);
+
+        String decrypted = RSA.decrypt(cipherRsa, d, n2);
+        System.out.println("Расшифрованное сообщение: " + decrypted);
     }
 }
