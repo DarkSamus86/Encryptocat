@@ -1,135 +1,99 @@
 package org.darksamus86.EDS;
 
 import org.darksamus86.Hash.Hash;
+import org.darksamus86.RSA.RSA;
 
-import java.security.*;
-import java.security.spec.PKCS8EncodedKeySpec;
-import java.security.spec.X509EncodedKeySpec;
-import java.util.Base64;
-
-/**
- * Класс EDS — реализация электронной цифровой подписи,
- * использующая собственный 32-битный хеш (Hash.hash)
- * и RSA с алгоритмом "SHA256withRSA".
- */
 public class EDS {
-    private final KeyPair keyPair;
 
-    // фиксированный IV для хеш-функции
+    // фиксированный IV для хеш-функции (как у вас было)
     private static final String FIXED_IV_HEX = "0x12345678";
 
-    // ---------------- Конструктор ----------------
-    public EDS() throws NoSuchAlgorithmException {
-        this.keyPair = generateRsaKeys();
+    private final String publicKey;   // формат "e,n"
+    private final String privateKey;  // формат "d,n"
+
+    /**
+     * Конструктор принимает ключи в том виде, в котором их возвращает RSA.generateKeys():
+     * publicKey = "e,n"
+     * privateKey = "d,n"
+     *
+     * Важно: генерация/печать ключей должна выполняться в Main (например, вызовом RSA.generateKeys()),
+     * а затем передача строк сюда.
+     */
+    public EDS(String publicKey, String privateKey) {
+        if (publicKey == null || privateKey == null) throw new IllegalArgumentException("Ключи не могут быть null");
+        this.publicKey = publicKey.trim();
+        this.privateKey = privateKey.trim();
     }
 
-    private static KeyPair generateRsaKeys() throws NoSuchAlgorithmException {
-        KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
-        kpg.initialize(2048);
-        return kpg.generateKeyPair();
+    public String getPublicKey() {
+        return publicKey;
     }
 
-    // ---------------- Геттеры ключей ----------------
-    public PublicKey getPublicKey() {
-        return keyPair.getPublic();
+    public String getPrivateKey() {
+        return privateKey;
     }
 
-    public PrivateKey getPrivateKey() {
-        return keyPair.getPrivate();
-    }
+    // ---------------- Вспомогательные ----------------
 
-    // ---------------- Вспомогательные методы ----------------
-    private byte[] computeHashBytesFromInputString(String input) {
-        String bits = Hash.hash(FIXED_IV_HEX, input);
+    /**
+     * Возвращает 32-битную бинарную строку из Hash.hash(FIXED_IV_HEX, message).
+     * Если Hash.hash вернёт строку длиннее/короче — нормируем до 32 бит (как в вашей предыдущей реализации).
+     */
+    private String computeHashBits(String message) {
+        String bits = Hash.hash(FIXED_IV_HEX, message);
         if (bits == null) throw new IllegalStateException("Hash.hash вернул null");
 
         if (bits.length() != 32) {
-            // выравниваем длину
             if (bits.length() < 32) bits = String.format("%32s", bits).replace(' ', '0');
             else bits = bits.substring(bits.length() - 32);
         }
+        return bits;
+    }
 
-        long value = Long.parseLong(bits, 2);
-        byte[] out = new byte[4];
-        out[0] = (byte) ((value >>> 24) & 0xFF);
-        out[1] = (byte) ((value >>> 16) & 0xFF);
-        out[2] = (byte) ((value >>> 8) & 0xFF);
-        out[3] = (byte) (value & 0xFF);
-        return out;
+    /**
+     * Разбирает ключ вида "exp,n" -> возвращает long[] {exp, n}
+     */
+    private long[] parseKeyPair(String key) {
+        String s = key.replaceAll("\\s+", "");
+        String[] parts = s.split(",");
+        if (parts.length != 2) throw new IllegalArgumentException("Некорректный формат ключа: " + key);
+        long exp = Long.parseLong(parts[0]);
+        long n = Long.parseLong(parts[1]);
+        return new long[] { exp, n };
     }
 
     // ---------------- Подпись и проверка ----------------
-    public byte[] signMessage(String message) throws GeneralSecurityException {
-        byte[] hashBytes = computeHashBytesFromInputString(message);
-        Signature sig = Signature.getInstance("SHA256withRSA");
-        sig.initSign(keyPair.getPrivate());
-        sig.update(hashBytes);
-        return sig.sign();
+
+    /**
+     * Подписывает сообщение: вычисляет хеш (бинарная строка 32 бита),
+     * затем "шифрует" эту строку приватным ключом RSA (используя ваш RSA.encrypt),
+     * возвращая hex-строку подписи.
+     *
+     * Метод НЕ печатает ничего.
+     */
+    public String signMessage(String message) {
+        String hashBits = computeHashBits(message); // например "010101..."
+        long[] priv = parseKeyPair(privateKey);
+        long d = priv[0];
+        long n = priv[1];
+        // Используем вашу RSA.encrypt: он принимает строку и (e,n) или (d,n).
+        // Возвращаем hex-строку, которую генерирует RSA.encrypt
+        return RSA.encrypt(hashBits, d, n);
     }
 
-    public boolean verifyMessage(String message, byte[] signature) throws GeneralSecurityException {
-        byte[] hashBytes = computeHashBytesFromInputString(message);
-        Signature sig = Signature.getInstance("SHA256withRSA");
-        sig.initVerify(keyPair.getPublic());
-        sig.update(hashBytes);
-        return sig.verify(signature);
-    }
-
-    // ---------------- Утилиты для PEM и HEX ----------------
-    public String getPublicKeyPem() {
-        byte[] der = keyPair.getPublic().getEncoded();
-        return wrapPem("PUBLIC KEY", Base64.getEncoder().encodeToString(der));
-    }
-
-    public String getPrivateKeyPem() {
-        byte[] der = keyPair.getPrivate().getEncoded();
-        return wrapPem("PRIVATE KEY", Base64.getEncoder().encodeToString(der));
-    }
-
-    private static String wrapPem(String type, String base64) {
-        StringBuilder sb = new StringBuilder();
-        sb.append("-----BEGIN ").append(type).append("-----\n");
-        for (int i = 0; i < base64.length(); i += 64) {
-            int end = Math.min(i + 64, base64.length());
-            sb.append(base64, i, end).append('\n');
-        }
-        sb.append("-----END ").append(type).append("-----\n");
-        return sb.toString();
-    }
-
-    public static String toHex(byte[] data) {
-        StringBuilder sb = new StringBuilder(data.length * 2);
-        for (byte b : data) sb.append(String.format("%02x", b));
-        return sb.toString();
-    }
-
-    public static byte[] fromHex(String hex) {
-        String s = hex.trim();
-        if (s.length() % 2 != 0) s = "0" + s;
-        byte[] out = new byte[s.length() / 2];
-        for (int i = 0; i < out.length; i++) {
-            int index = i * 2;
-            out[i] = (byte) Integer.parseInt(s.substring(index, index + 2), 16);
-        }
-        return out;
-    }
-
-    // ---------------- Конвертация PEM <-> ключи ----------------
-    public static PublicKey pemToPublicKey(String pem) throws GeneralSecurityException {
-        String body = pem.replaceAll("-----BEGIN PUBLIC KEY-----", "")
-                .replaceAll("-----END PUBLIC KEY-----", "")
-                .replaceAll("\\s+", "");
-        byte[] der = Base64.getDecoder().decode(body);
-        X509EncodedKeySpec spec = new X509EncodedKeySpec(der);
-        return KeyFactory.getInstance("RSA").generatePublic(spec);
-    }
-
-    public static PrivateKey pemToPrivateKey(String pem) throws GeneralSecurityException {
-        String body = pem.replaceAll("-----BEGIN PRIVATE KEY-----", "")
-                .replaceAll("-----END PRIVATE KEY-----", "")
-                .replaceAll("\\s+", "");
-        byte[] der = Base64.getDecoder().decode(body);
-        PKCS8EncodedKeySpec spec = new PKCS8EncodedKeySpec(der);
-        return KeyFactory.getInstance("RSA").generatePrivate(spec);
+    /**
+     * Проверяет подпись: расшифровывает signatureHex публичным ключом (e,n) с помощью RSA.decrypt
+     * и сравнивает полученную строку с вычисленным хешем сообщения.
+     *
+     *
+     */
+    public boolean verifyMessage(String message, String signatureHex) {
+        long[] pub = parseKeyPair(publicKey);
+        long e = pub[0];
+        long n = pub[1];
+        // RSA.decrypt вернёт строку, которая была зашифрована (то есть строку хеша)
+        String decrypted = RSA.decrypt(signatureHex, e, n);
+        String expectedHash = computeHashBits(message);
+        return expectedHash.equals(decrypted);
     }
 }
