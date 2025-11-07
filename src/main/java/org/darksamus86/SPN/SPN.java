@@ -5,7 +5,7 @@ import java.util.stream.Collectors;
 
 public class SPN {
 
-    // ---------- Генерация ключей ----------
+    // ---------- Генерация ключей + IV ----------
     public static String generateKey(int bits) {
         Random random = new Random();
         StringBuilder key = new StringBuilder(bits);
@@ -15,9 +15,20 @@ public class SPN {
         return key.toString();
     }
 
+    public static String generateIV(int bits) {
+        Random random = new Random();
+        StringBuilder iv = new StringBuilder(bits);
+        for (int i = 0; i < bits; i++) {
+            iv.append(random.nextBoolean() ? '1' : '0');
+        }
+        return iv.toString();
+    }
+
     // ---------- Конвертации ----------
     public static String bitsToHex(String bits) {
-        String hex = new java.math.BigInteger(bits, 2).toString(16).toUpperCase();
+        // BigInteger constructor with sign-magnitude requires a "1" prefix for positive long bitstrings starting with zero
+        java.math.BigInteger bi = new java.math.BigInteger(bits, 2);
+        String hex = bi.toString(16).toUpperCase();
         while (hex.length() < bits.length() / 4) hex = "0" + hex;
         return hex;
     }
@@ -59,7 +70,8 @@ public class SPN {
         Map<Integer, Integer> table = inverse ? INV_SBOX_HEX : SBOX_HEX;
         StringBuilder out = new StringBuilder();
         for (int i = 0; i + 4 <= bits.length(); i += 4) {
-            int val = Integer.parseInt(bits.substring(i, i + 4), 2);
+            String nibble = bits.substring(i, i + 4);
+            int val = Integer.parseInt(nibble, 2);
             int subVal = table.get(val);
             out.append(String.format("%4s", Integer.toBinaryString(subVal)).replace(' ', '0'));
         }
@@ -87,6 +99,8 @@ public class SPN {
                 int src = e.getKey(), dest = e.getValue();
                 if (src <= block.length()) {
                     permuted[dest - 1] = block.charAt(src - 1);
+                } else {
+                    permuted[dest - 1] = '0';
                 }
             }
             out.append(new String(permuted));
@@ -97,12 +111,17 @@ public class SPN {
     // ---------- XOR ----------
     public static String xorBits(String a, String b) {
         StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < Math.min(a.length(), b.length()); i++) {
+        int len = Math.min(a.length(), b.length());
+        for (int i = 0; i < len; i++) {
             sb.append(a.charAt(i) == b.charAt(i) ? '0' : '1');
         }
+        // if lengths differ, append remaining bits of longer operand (xor with implicit 0)
+        if (a.length() > len) sb.append(a.substring(len));
+        if (b.length() > len) sb.append(b.substring(len));
         return sb.toString();
     }
 
+    // ---------- Блокирование ----------
     public static List<String> splitIntoBlocks(String text, int blockSize) {
         List<String> blocks = new ArrayList<>();
         for (int i = 0; i < text.length(); i += blockSize)
@@ -128,9 +147,12 @@ public class SPN {
         return bits.substring(0, bits.length() - padVal * 8);
     }
 
-    // ---------- Шифрование ----------
-    public static String encrypt(String plaintextBits, List<String> roundKeys) {
+    // ---------- Шифрование/Дешифрование одного 512-битного блока ----------
+    public static String encryptBlock(String plaintextBits, List<String> roundKeys) {
+        // разбиваем на 4 блока по 128
         List<String> blocks = splitIntoBlocks(plaintextBits, 128);
+        // если блоков меньше 4, дополняем нулями до 4*128
+        while (blocks.size() < 4) blocks.add("0".repeat(128));
         List<String> encryptedBlocks = new ArrayList<>();
         for (int i = 0; i < 4; i++) {
             String xorOut = xorBits(blocks.get(i), roundKeys.get(i));
@@ -141,9 +163,9 @@ public class SPN {
         return String.join("", encryptedBlocks);
     }
 
-    // ---------- Расшифрование ----------
-    public static String decrypt(String cipherBits, List<String> roundKeys) {
+    public static String decryptBlock(String cipherBits, List<String> roundKeys) {
         List<String> blocks = splitIntoBlocks(cipherBits, 128);
+        while (blocks.size() < 4) blocks.add("0".repeat(128));
         List<String> decryptedBlocks = new ArrayList<>();
         for (int i = 0; i < 4; i++) {
             String pboxInv = pboxPermutation(blocks.get(i), true);
@@ -152,6 +174,65 @@ public class SPN {
             decryptedBlocks.add(xorOut);
         }
         return String.join("", decryptedBlocks);
+    }
+
+    // ---------- Режимы ECB / CBC для произвольной длины (с блокировкой по 512 бит) ----------
+    public static String ecbEncrypt(String plaintextBits, List<String> roundKeys) {
+        List<String> blocks = splitIntoBlocks(plaintextBits, 512);
+        StringBuilder ciphertext = new StringBuilder();
+        for (String block : blocks) {
+            // если блок короче 512, дополняем нулями (обычно уже есть PKCS7)
+            if (block.length() < 512) block = block + "0".repeat(512 - block.length());
+            ciphertext.append(encryptBlock(block, roundKeys));
+        }
+        return ciphertext.toString();
+    }
+
+    public static String ecbDecrypt(String cipherBits, List<String> roundKeys) {
+        List<String> blocks = splitIntoBlocks(cipherBits, 512);
+        StringBuilder plaintext = new StringBuilder();
+        for (String block : blocks) {
+            if (block.length() < 512) block = block + "0".repeat(512 - block.length());
+            plaintext.append(decryptBlock(block, roundKeys));
+        }
+        return plaintext.toString();
+    }
+
+    public static String cbcEncrypt(String plaintextBits, List<String> roundKeys, String iv) {
+        List<String> blocks = splitIntoBlocks(plaintextBits, 512);
+        String prev = leftPadTo(iv, 512); // zfill behavior
+        StringBuilder ciphertext = new StringBuilder();
+        for (String block : blocks) {
+            if (block.length() < 512) block = block + "0".repeat(512 - block.length());
+            String xored = xorBits(block, prev);
+            String encrypted = encryptBlock(xored, roundKeys);
+            ciphertext.append(encrypted);
+            prev = encrypted;
+        }
+        return ciphertext.toString();
+    }
+
+    public static String cbcDecrypt(String cipherBits, List<String> roundKeys, String iv) {
+        List<String> blocks = splitIntoBlocks(cipherBits, 512);
+        String prev = leftPadTo(iv, 512);
+        StringBuilder plaintext = new StringBuilder();
+        for (String block : blocks) {
+            if (block.length() < 512) block = block + "0".repeat(512 - block.length());
+            String decrypted = decryptBlock(block, roundKeys);
+            String xored = xorBits(decrypted, prev);
+            plaintext.append(xored);
+            prev = block;
+        }
+        return plaintext.toString();
+    }
+
+    // zfill аналог — дополняет слева нулями до нужной длины
+    private static String leftPadTo(String s, int len) {
+        if (s.length() >= len) return s;
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < len - s.length(); i++) sb.append('0');
+        sb.append(s);
+        return sb.toString();
     }
 
     // ---------- Утилита для инверсии мап ----------
@@ -163,7 +244,7 @@ public class SPN {
         return inverted;
     }
 
-    // ---------- Основное меню ----------
+    // ---------- Основное меню (с ECB/CBC + IV) ----------
     public static void main(String[] args) {
         Scanner sc = new Scanner(System.in);
         while (true) {
@@ -174,58 +255,94 @@ public class SPN {
             System.out.print("Ваш выбор: ");
             String choice = sc.nextLine();
 
-            if (choice.equals("1")) {
-                String key256 = generateKey(256);
-                String keyHex = bitsToHex(key256);
-                System.out.println("\nСгенерированный 256-битный ключ (HEX):");
-                System.out.println(keyHex);
+            if (choice.equals("1") || choice.equals("2")) {
+                System.out.println("\nВыберите режим:");
+                System.out.println("1 - ECB");
+                System.out.println("2 - CBC");
+                System.out.print("Режим: ");
+                String mode = sc.nextLine();
+
+                // ключ
+                String key256;
+                String keyHex;
+                if (choice.equals("1")) { // при шифровании генерируем ключ
+                    key256 = generateKey(256);
+                    keyHex = bitsToHex(key256);
+                    System.out.println("\nСгенерированный 256-битный ключ (HEX):");
+                    System.out.println(keyHex);
+                } else { // при расшифровке пользователь вводит ключ
+                    System.out.print("\nВведите ключ (HEX): ");
+                    keyHex = sc.nextLine();
+                    try {
+                        key256 = hexToBits(keyHex);
+                    } catch (Exception e) {
+                        System.out.println("Некорректный HEX-ключ.");
+                        continue;
+                    }
+                }
 
                 String K1 = key256.substring(0, 128);
                 String K2 = key256.substring(128);
                 List<String> roundKeys = List.of(K1, K2, K1, K2);
 
-                System.out.print("\nВведите открытый текст: ");
-                String plaintext = sc.nextLine();
-                String bits = detectAndConvertToBits(plaintext);
-                bits = pkcs7Pad(bits, 512);
+                if (choice.equals("1")) { // Шифрование
+                    System.out.print("\nВведите открытый текст: ");
+                    String plaintext = sc.nextLine();
+                    String bits = detectAndConvertToBits(plaintext);
+                    bits = pkcs7Pad(bits, 512); // pad to 512-blocks
 
-                String cipherBits = encrypt(bits.substring(0, 512), roundKeys);
-                String cipherHex = bitsToHex(cipherBits);
+                    String cipherBits;
+                    String iv = null;
+                    if ("1".equals(mode)) { // ECB
+                        cipherBits = ecbEncrypt(bits, roundKeys);
+                        System.out.println("\nРежим: ECB");
+                    } else { // CBC
+                        iv = generateIV(128);
+                        String ivHex = bitsToHex(iv);
+                        System.out.println("\nРежим: CBC");
+                        System.out.println("IV (HEX): " + ivHex);
+                        cipherBits = cbcEncrypt(bits, roundKeys, iv);
+                    }
 
-                System.out.println("\nЗашифрованный текст (HEX):");
-                System.out.println(cipherHex);
+                    String cipherHex = bitsToHex(cipherBits);
+                    System.out.println("\nКлюч (HEX): " + keyHex);
+                    System.out.println("\nЗашифрованный текст (HEX):");
+                    System.out.println(cipherHex);
 
-            } else if (choice.equals("2")) {
-                System.out.print("\nВведите 256-битный ключ (HEX): ");
-                String keyHex = sc.nextLine();
-                String keyBits;
-                try {
-                    keyBits = hexToBits(keyHex);
-                } catch (Exception e) {
-                    System.out.println("Некорректный HEX-ключ.");
-                    continue;
+                } else { // Расшифровка
+                    System.out.print("Введите зашифрованный текст (HEX): ");
+                    String cipherHex = sc.nextLine();
+                    String cipherBits;
+                    try {
+                        cipherBits = hexToBits(cipherHex);
+                    } catch (Exception e) {
+                        System.out.println("Некорректный HEX-текст.");
+                        continue;
+                    }
+
+                    String decryptedBits;
+                    if ("1".equals(mode)) { // ECB
+                        decryptedBits = ecbDecrypt(cipherBits, roundKeys);
+                        System.out.println("\nРежим: ECB");
+                    } else { // CBC
+                        System.out.print("Введите IV (HEX): ");
+                        String ivHex = sc.nextLine();
+                        String ivBits;
+                        try {
+                            ivBits = hexToBits(ivHex);
+                        } catch (Exception e) {
+                            System.out.println("Некорректный HEX-IV.");
+                            continue;
+                        }
+                        decryptedBits = cbcDecrypt(cipherBits, roundKeys, ivBits);
+                        System.out.println("\nРежим: CBC");
+                    }
+
+                    String unpaddedBits = pkcs7Unpad(decryptedBits);
+                    String decryptedText = bitsToText(unpaddedBits);
+                    System.out.println("\nРасшифрованный текст:");
+                    System.out.println(decryptedText.replace("\0", "").trim());
                 }
-
-                System.out.print("Введите зашифрованный текст (HEX): ");
-                String cipherHex = sc.nextLine();
-                String cipherBits;
-                try {
-                    cipherBits = hexToBits(cipherHex);
-                } catch (Exception e) {
-                    System.out.println("Некорректный HEX-текст.");
-                    continue;
-                }
-
-                String K1 = keyBits.substring(0, 128);
-                String K2 = keyBits.substring(128);
-                List<String> roundKeys = List.of(K1, K2, K1, K2);
-
-                String decryptedBits = decrypt(cipherBits, roundKeys);
-                String unpaddedBits = pkcs7Unpad(decryptedBits);
-                String decryptedText = bitsToText(unpaddedBits);
-
-                System.out.println("\nРасшифрованный текст:");
-                System.out.println(decryptedText.replace("\0", "").trim());
 
             } else if (choice.equals("3")) {
                 System.out.println("Выход.");
