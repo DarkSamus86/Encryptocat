@@ -426,24 +426,4 @@ public class EncryptionMode {
         public B second;
         public Pair(A a, B b) { first = a; second = b; }
     }
-
-    // --- Example main for quick smoke test (optional) ---
-    public static void main(String[] args) {
-        String key = generateKey(256);
-        System.out.println("Key bits len: " + key.length());
-        String iv = generateIV(128);
-        System.out.println("IV bits len: " + iv.length());
-        String text = "Hello";
-        String bits = textToBits(text);
-        System.out.println("Text bits: " + bits);
-        String padded = pkcs7Pad(bits, 512);
-        System.out.println("Padded len: " + padded.length());
-        List<String> roundKeys = generateRoundKeys(key, 10, 128);
-        String cipher = ecbEncrypt(padded, roundKeys, 512, 128, null);
-        System.out.println("Cipher len: " + cipher.length());
-        String plain = ecbDecrypt(cipher, roundKeys, 512, 128, null);
-        System.out.println("Recovered len: " + plain.length());
-        System.out.println("Unpadded text: " + bitsToText(pkcs7Unpad(plain)));
-    }
 }
-
