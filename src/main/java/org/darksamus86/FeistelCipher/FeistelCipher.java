@@ -1,89 +1,118 @@
 package org.darksamus86.FeistelCipher;
 
+import org.darksamus86.encryption_mode.EncryptionMode;
+import java.util.List;
+import java.util.Map;
+
+import java.util.Scanner;
+
 public class FeistelCipher {
+
     private static final int NUM_ROUNDS = 16;
+    private static final int BLOCK_SIZE = 512; // размер блока в битах
+    private static final int ROUND_KEY_SIZE = 256; // размер ключа раунда
 
+    // --- Шифрование блока Feistel ---
+    public static String encryptBlock(String blockBits, String keyBits) {
+        List<String> roundKeys = EncryptionMode.generateRoundKeys(keyBits, NUM_ROUNDS, ROUND_KEY_SIZE);
+        return EncryptionMode.feistelEncryptBlock(blockBits, roundKeys);
+    }
+
+    // --- Расшифровка блока Feistel ---
+    public static String decryptBlock(String blockBits, String keyBits) {
+        List<String> roundKeys = EncryptionMode.generateRoundKeys(keyBits, NUM_ROUNDS, ROUND_KEY_SIZE);
+        return EncryptionMode.feistelDecryptBlock(blockBits, roundKeys);
+    }
+
+    // --- Шифрование текста ---
     public static String encrypt(String plaintext, String key) {
-        // Convert the plaintext and key to binary strings
-        String binaryPlaintext = stringToBinary(plaintext);
-        String binaryKey = stringToBinary(key);
+        String bits = EncryptionMode.textToBits(plaintext);
+        String keyBits = EncryptionMode.textToBits(key);
+        List<String> blocks = EncryptionMode.splitIntoBlocks(bits, BLOCK_SIZE);
 
-        // Split the binary plaintext into two halves
-        String left = binaryPlaintext.substring(0, binaryPlaintext.length() / 2);
-        String right = binaryPlaintext.substring(binaryPlaintext.length() / 2);
-
-        // Perform Feistel rounds
-        for (int i = 0; i < NUM_ROUNDS; i++) {
-            String newLeft = right;
-            String newRight = xor(left, feistelFunction(right, binaryKey));
-
-            left = newLeft;
-            right = newRight;
+        StringBuilder cipherBits = new StringBuilder();
+        for (String block : blocks) {
+            if (block.length() < BLOCK_SIZE) {
+                while (block.length() < BLOCK_SIZE) block += "0";
+            }
+            cipherBits.append(encryptBlock(block, keyBits));
         }
-
-        // Combine the left and right halves and convert back to plaintext
-        String ciphertext = binaryToString(left + right);
-        return ciphertext;
+        return EncryptionMode.bitsToHex(cipherBits.toString());
     }
 
-    public static String decrypt(String ciphertext, String key) {
-        // Convert the ciphertext and key to binary strings
-        String binaryCiphertext = stringToBinary(ciphertext);
-        String binaryKey = stringToBinary(key);
+    // --- Расшифровка текста ---
+    public static String decrypt(String cipherHex, String key) {
+        String cipherBits = EncryptionMode.hexToBits(cipherHex);
+        String keyBits = EncryptionMode.textToBits(key);
+        List<String> blocks = EncryptionMode.splitIntoBlocks(cipherBits, BLOCK_SIZE);
 
-        // Split the binary ciphertext into two halves
-        String left = binaryCiphertext.substring(0, binaryCiphertext.length() / 2);
-        String right = binaryCiphertext.substring(binaryCiphertext.length() / 2);
-
-        // Perform Feistel rounds in reverse order
-        for (int i = NUM_ROUNDS - 1; i >= 0; i--) {
-            String newRight = left;
-            String newLeft = xor(right, feistelFunction(left, binaryKey));
-
-            left = newLeft;
-            right = newRight;
+        StringBuilder plainBits = new StringBuilder();
+        for (String block : blocks) {
+            if (block.length() < BLOCK_SIZE) {
+                while (block.length() < BLOCK_SIZE) block += "0";
+            }
+            plainBits.append(decryptBlock(block, keyBits));
         }
-
-        // Combine the left and right halves and convert back to plaintext
-        String plaintext = binaryToString(left + right);
-        return plaintext;
+        return EncryptionMode.bitsToText(plainBits.toString());
     }
 
-    private static String feistelFunction(String input, String key) {
-        // Perform some transformation on the input using the key
-        // This can be any cryptographic function, such as XOR, substitution, permutation, etc.
-        // For simplicity, we will use XOR as the Feistel function in this example
-        return xor(input, key);
-    }
+    public static void main(String[] args) {
+        Scanner scanner = new Scanner(System.in);
 
-    private static String xor(String a, String b) {
-        StringBuilder result = new StringBuilder();
-        for (int i = 0; i < a.length(); i++) {
-            if (a.charAt(i) == b.charAt(i)) {
-                result.append("0");
-            } else {
-                result.append("1");
+        while (true) {
+
+            System.out.println("\nМеню (Feistel):");
+            System.out.println("1 — Зашифровать");
+            System.out.println("2 — Расшифровать");
+            System.out.println("3 — Выход");
+            System.out.print("Ваш выбор: ");
+
+            String choice = scanner.nextLine().trim();
+
+            // ---------- ENCRYPT ----------
+            if (choice.equals("1")) {
+
+                // Генерация ключа (HEX)
+                String keyBits = EncryptionMode.generateKey(ROUND_KEY_SIZE);
+                String keyHex = EncryptionMode.bitsToHex(keyBits);
+
+                System.out.println("\nСгенерированный ключ (HEX):");
+                System.out.println(keyHex);
+
+                System.out.print("\nВведите открытый текст: ");
+                String text = scanner.nextLine();
+
+                String cipherHex = encrypt(text, keyHex);
+
+                System.out.println("\nЗашифрованный текст (HEX):");
+                System.out.println(cipherHex);
+
+            }
+            // ---------- DECRYPT ----------
+            else if (choice.equals("2")) {
+
+                System.out.print("Введите ключ (HEX): ");
+                String keyHex = scanner.nextLine().trim();
+
+                System.out.print("Введите шифртекст (HEX): ");
+                String cipherHex = scanner.nextLine().trim();
+
+                String plaintext = decrypt(cipherHex, keyHex);
+
+                System.out.println("\nРасшифрованный текст:");
+                System.out.println(plaintext);
+
+            }
+            // ---------- EXIT ----------
+            else if (choice.equals("3")) {
+                System.out.println("Выход.");
+                break;
+            }
+            else {
+                System.out.println("Неверный выбор.");
             }
         }
-        return result.toString();
-    }
 
-    private static String stringToBinary(String str) {
-        StringBuilder binary = new StringBuilder();
-        for (char c : str.toCharArray()) {
-            String binaryChar = Integer.toBinaryString(c);
-            binary.append(String.format("%8s", binaryChar).replace(" ", "0"));
-        }
-        return binary.toString();
-    }
-
-    private static String binaryToString(String binary) {
-        StringBuilder str = new StringBuilder();
-        for (int i = 0; i < binary.length(); i += 8) {
-            String binaryChar = binary.substring(i, i + 8);
-            int decimal = Integer.parseInt(binaryChar, 2);
-            str.append((char) decimal);
-        }
-        return str.toString();
+        scanner.close();
     }
 }
