@@ -1,141 +1,133 @@
 package org.darksamus86.RSA;
 
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.*;
+
 public class TestRSA {
 
-    public static void main(String[] args) {
+    @Test
+    void testKeyGenerationFormat() {
+        String[] keys = RSA.generateKeys();
+        assertEquals(2, keys.length, "generateKeys() должен возвращать массив из двух строк");
 
-        testKeyGeneration();
-        testEncryptDecryptSimple();
-        testEncryptDecryptWithSymbols();
-        testMultipleMessages();
-        testDifferentKeysIndependence();
+        assertTrue(keys[0].contains(","),
+                "Открытый ключ должен быть формата e,n");
+
+        assertTrue(keys[1].contains(","),
+                "Закрытый ключ должен быть формата d,n");
     }
 
-    // --- Тест 1: генерация ключей ---
-    private static void testKeyGeneration() {
-        System.out.println("== Тест 1: Генерация ключей ==");
-
+    @Test
+    void testEncryptDecryptBasic() {
         String[] keys = RSA.generateKeys();
-        String publicKey = keys[0];
-        String privateKey = keys[1];
+        String publicKey = keys[0];   // "e,n"
+        String privateKey = keys[1];  // "d,n"
 
-        if (!publicKey.contains(",") || !privateKey.contains(",")) {
-            System.out.println("❌ Ошибка: формат ключей неверный!");
-            return;
-        }
+        long e = Long.parseLong(publicKey.split(",")[0]);
+        long n = Long.parseLong(publicKey.split(",")[1]);
+        long d = Long.parseLong(privateKey.split(",")[0]);
 
-        System.out.println("✔ Ключи успешно сгенерированы\n");
-    }
+        String message = "Hello RSA";
 
-    // --- Тест 2: простое шифрование/дешифрование ---
-    private static void testEncryptDecryptSimple() {
-        System.out.println("== Тест 2: Простое шифрование/дешифрование ==");
-
-        String[] keys = RSA.generateKeys();
-        String[] pub = keys[0].split(",");
-        String[] priv = keys[1].split(",");
-
-        long e = Long.parseLong(pub[0]);
-        long n = Long.parseLong(pub[1]);
-        long d = Long.parseLong(priv[0]);
-
-        String msg = "Hello";
-        String encrypted = RSA.encrypt(msg, e, n);
+        String encrypted = RSA.encrypt(message, e, n);
         String decrypted = RSA.decrypt(encrypted, d, n);
 
-        System.out.println("Зашифровано: " + encrypted);
-        System.out.println("Расшифровано: " + decrypted);
-
-        if (!msg.equals(decrypted)) {
-            System.out.println("❌ Ошибка: расшифрование неверное!");
-        } else {
-            System.out.println("✔ Шифрование работает корректно\n");
-        }
+        assertEquals(message, decrypted, "RSA.encrypt → RSA.decrypt должны давать исходное сообщение");
     }
 
-    // --- Тест 3: текст с пробелами и знаками ---
-    private static void testEncryptDecryptWithSymbols() {
-        System.out.println("== Тест 3: Шифрование текста со знаками ==");
-
+    @Test
+    void testDifferentMessagesHaveDifferentCipher() {
         String[] keys = RSA.generateKeys();
-        String[] pub = keys[0].split(",");
-        String[] priv = keys[1].split(",");
+        long e = Long.parseLong(keys[0].split(",")[0]);
+        long n = Long.parseLong(keys[0].split(",")[1]);
 
-        long e = Long.parseLong(pub[0]);
-        long n = Long.parseLong(pub[1]);
-        long d = Long.parseLong(priv[0]);
+        String msg1 = "A";
+        String msg2 = "B";
 
-        String msg = "Hello, World! 123";
-        String encrypted = RSA.encrypt(msg, e, n);
-        String decrypted = RSA.decrypt(encrypted, d, n);
+        String c1 = RSA.encrypt(msg1, e, n);
+        String c2 = RSA.encrypt(msg2, e, n);
 
-        System.out.println("Расшифровано: " + decrypted);
-
-        if (!msg.equals(decrypted)) {
-            System.out.println("❌ Ошибка: неверный результат!");
-        } else {
-            System.out.println("✔ Символы корректно шифруются\n");
-        }
+        assertNotEquals(c1, c2, "Разные сообщения должны шифроваться по-разному");
     }
 
-    // --- Тест 4: несколько сообщений подряд ---
-    private static void testMultipleMessages() {
-        System.out.println("== Тест 4: Несколько сообщений ==");
-
+    @Test
+    void testSignWithPrivateVerifyWithPublic() {
         String[] keys = RSA.generateKeys();
-        String[] pub = keys[0].split(",");
-        String[] priv = keys[1].split(",");
+        long e = Long.parseLong(keys[0].split(",")[0]);
+        long n = Long.parseLong(keys[0].split(",")[1]);
+        long d = Long.parseLong(keys[1].split(",")[0]);
 
-        long e = Long.parseLong(pub[0]);
-        long n = Long.parseLong(pub[1]);
-        long d = Long.parseLong(priv[0]);
+        String hash = "0101010101010101";
 
-        String[] messages = {
-                "Hi",
-                "Test message",
-                "12345",
-                "!@#$%^&*()"
-        };
+        // "подпись": шифруем приватным ключом
+        String signature = RSA.encrypt(hash, d, n);
 
-        boolean ok = true;
+        // проверка: расшифровка публичным
+        String decrypted = RSA.decrypt(signature, e, n);
 
-        for (String msg : messages) {
-            String encrypted = RSA.encrypt(msg, e, n);
-            String decrypted = RSA.decrypt(encrypted, d, n);
-            if (!msg.equals(decrypted)) ok = false;
-        }
+        assertEquals(hash, decrypted,
+                "Шифрование d и расшифрование e должны восстанавливать исходные данные");
+    }
 
-        if (!ok) {
-            System.out.println("❌ Ошибка: одно из сообщений не расшифровалось");
-        } else {
-            System.out.println("✔ Все сообщения успешно шифруются/дешифруются\n");
+    @Test
+    void testModInverseCorrectness() {
+        long e = 17;
+        long phi = 3120;
+
+        // d должно быть 2753
+        long d = invokeModInverse(e, phi);
+
+        assertEquals(2753, d, "modInverse(e, phi) должно возвращать корректное d");
+    }
+
+    // доступ к private RSA.modInverse() через рефлексию
+    private long invokeModInverse(long e, long phi) {
+        try {
+            var method = RSA.class.getDeclaredMethod("modInverse", long.class, long.class);
+            method.setAccessible(true);
+            return (long) method.invoke(null, e, phi);
+        } catch (Exception ex) {
+            throw new RuntimeException(ex);
         }
     }
 
-    // --- Тест 5: независимость разных пар ключей ---
-    private static void testDifferentKeysIndependence() {
-        System.out.println("== Тест 5: Независимость ключей ==");
+    @Test
+    void testModPowMatchesMathPowModulo() {
+        long base = 7;
+        long exp = 13;
+        long mod = 101;
 
-        String[] keys1 = RSA.generateKeys();
-        String[] keys2 = RSA.generateKeys();
+        long expected = (long) Math.pow(base, exp) % mod;
+        long actual = invokeModPow(base, exp, mod);
 
-        long e1 = Long.parseLong(keys1[0].split(",")[0]);
-        long n1 = Long.parseLong(keys1[0].split(",")[1]);
-        long d1 = Long.parseLong(keys1[1].split(",")[0]);
+        assertEquals(expected, actual,
+                "modPow должен совпадать с Math.pow(base, exp) % mod для малых чисел");
+    }
 
-        long e2 = Long.parseLong(keys2[0].split(",")[0]);
-        long n2 = Long.parseLong(keys2[0].split(",")[1]);
-        long d2 = Long.parseLong(keys2[1].split(",")[0]);
+    // доступ к private RSA.modPow()
+    private long invokeModPow(long base, long exp, long mod) {
+        try {
+            var method = RSA.class.getDeclaredMethod("modPow", long.class, long.class, long.class);
+            method.setAccessible(true);
+            return (long) method.invoke(null, base, exp, mod);
+        } catch (Exception ex) {
+            throw new RuntimeException(ex);
+        }
+    }
 
-        String msg = "RSA Test";
+    @Test
+    void testGcd() {
+        long gcd = invokeGcd(48, 18);
+        assertEquals(6, gcd, "gcd(48,18) должно быть 6");
+    }
 
-        String encrypted1 = RSA.encrypt(msg, e1, n1);
-        String decrypted2 = RSA.decrypt(encrypted1, d2, n2);
-
-        if (msg.equals(decrypted2)) {
-            System.out.println("❌ Ошибка: разные ключи не должны подходить!");
-        } else {
-            System.out.println("✔ Разные пары ключей независимы\n");
+    private int invokeGcd(int a, int b) {
+        try {
+            var method = RSA.class.getDeclaredMethod("gcd", int.class, int.class);
+            method.setAccessible(true);
+            return (int) method.invoke(null, a, b);
+        } catch (Exception ex) {
+            throw new RuntimeException(ex);
         }
     }
 }
