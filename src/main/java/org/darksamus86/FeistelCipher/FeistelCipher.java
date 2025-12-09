@@ -2,7 +2,6 @@ package org.darksamus86.FeistelCipher;
 
 import org.darksamus86.encryption_mode.EncryptionMode;
 import java.util.List;
-import java.util.Map;
 
 import java.util.Scanner;
 
