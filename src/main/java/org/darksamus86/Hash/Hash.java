@@ -216,7 +216,7 @@ public class Hash {
     public static void main(String[] args) {
         java.util.Scanner scanner = new java.util.Scanner(System.in);
 
-        System.out.println("=== Хеш-функция (SPN + компрессия 32 бита) ===");
+        System.out.println("=== Хеш-функция (SPN + компрессия) ===");
 
         try {
             // 1. Ввод IV
@@ -233,7 +233,7 @@ public class Hash {
             System.out.println("\n------ РЕЗУЛЬТАТ ------");
             System.out.println("Исходный текст:  " + plainInput);
             System.out.println("IV (нормализ.):  " + ivInput);
-            System.out.println("Хэш (32 бита):   " + hashResult);
+            System.out.println("Хэш:   " + hashResult);
             System.out.println("------------------------");
 
         } catch (Exception e) {
