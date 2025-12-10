@@ -102,4 +102,44 @@ public class RSA {
         }
         return decrypted.toString();
     }
+
+    public static void main(String[] args) {
+        java.util.Scanner scanner = new java.util.Scanner(System.in);
+
+        // 1. Генерация ключей
+        String[] keys = RSA.generateKeys();
+        String publicKey = keys[0];   // "e,n"
+        String privateKey = keys[1];  // "d,n"
+
+        System.out.println("Публичный ключ:  " + publicKey);
+        System.out.println("Приватный ключ:  " + privateKey);
+        System.out.println();
+
+        // Разбор ключей
+        long e = Long.parseLong(publicKey.split(",")[0]);
+        long n = Long.parseLong(publicKey.split(",")[1]);
+
+        long d = Long.parseLong(privateKey.split(",")[0]);
+        long n2 = Long.parseLong(privateKey.split(",")[1]); // то же n
+
+        // 2. Ввод сообщения
+        System.out.print("Введите текст для шифрования: ");
+        String message = scanner.nextLine();
+
+        // 3. Шифрование
+        String encrypted = RSA.encrypt(message, e, n);
+        System.out.println("\nЗашифрованный текст (HEX):");
+        System.out.println(encrypted);
+
+        // 4. Дешифрование
+        String decrypted = RSA.decrypt(encrypted, d, n2);
+        System.out.println("\nРасшифрованный текст:");
+        System.out.println(decrypted);
+
+        // 5. Проверка
+        System.out.println("\nПроверка: " + (message.equals(decrypted) ? "Успех" : "Ошибка"));
+
+        scanner.close();
+    }
+
 }

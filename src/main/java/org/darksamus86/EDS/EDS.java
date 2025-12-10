@@ -96,4 +96,54 @@ public class EDS {
         String expectedHash = computeHashBits(message);
         return expectedHash.equals(decrypted);
     }
+    public static void main(String[] args) {
+        java.util.Scanner scanner = new java.util.Scanner(System.in);
+
+        // 1. Генерация RSA ключей
+        String[] keys = RSA.generateKeys();
+        String publicKey = keys[0];   // формат "e,n"
+        String privateKey = keys[1];  // формат "d,n"
+
+        System.out.println("=== Сгенерированные RSA ключи ===");
+        System.out.println("Публичный ключ:  " + publicKey);
+        System.out.println("Приватный ключ:  " + privateKey);
+        System.out.println();
+
+        // 2. Создание EDS объекта
+        EDS eds = new EDS(publicKey, privateKey);
+
+        // 3. Ввод сообщения
+        System.out.print("Введите сообщение: ");
+        String message = scanner.nextLine();
+
+        // 4. Подпись сообщения
+        String signatureHex = eds.signMessage(message);
+        System.out.println("\nПодпись (hex): " + signatureHex);
+
+        // 5. Проверка подписи
+        boolean valid = eds.verifyMessage(message, signatureHex);
+        System.out.println("Проверка подписи: " + (valid ? "валидна" : "НЕ валидна"));
+
+        // 6. Расшифровка подписи публичным ключом → восстановление хеша
+        long[] pub = eds.parseKeyPair(publicKey);
+        long e = pub[0];
+        long n = pub[1];
+
+        String decryptedHash = RSA.decrypt(signatureHex, e, n);
+
+        System.out.println("\nРасшифрованный хеш из подписи: " + decryptedHash);
+
+        // 7. Хеш, вычисленный заново
+        String expectedHash = eds.computeHashBits(message);
+        System.out.println("Хеш сообщения:                " + expectedHash);
+
+        if (decryptedHash.equals(expectedHash)) {
+            System.out.println("→ Подпись корректна, хеши совпадают");
+        } else {
+            System.out.println("→ Подпись НЕ корректна, хеши отличаются");
+        }
+
+        scanner.close();
+    }
+
 }

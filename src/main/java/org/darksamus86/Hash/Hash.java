@@ -212,4 +212,35 @@ public class Hash {
         }
         return sb.toString();
     }
+
+    public static void main(String[] args) {
+        java.util.Scanner scanner = new java.util.Scanner(System.in);
+
+        System.out.println("=== Хеш-функция (SPN + компрессия 32 бита) ===");
+
+        try {
+            // 1. Ввод IV
+            System.out.print("Введите IV (bin / hex / 0xHH / dec): ");
+            String ivInput = scanner.nextLine();
+
+            // 2. Ввод сообщения
+            System.out.print("Введите сообщение для хеширования: ");
+            String plainInput = scanner.nextLine();
+
+            // 3. Вычисление хэша
+            String hashResult = Hash.hash(ivInput, plainInput);
+
+            System.out.println("\n------ РЕЗУЛЬТАТ ------");
+            System.out.println("Исходный текст:  " + plainInput);
+            System.out.println("IV (нормализ.):  " + ivInput);
+            System.out.println("Хэш (32 бита):   " + hashResult);
+            System.out.println("------------------------");
+
+        } catch (Exception e) {
+            System.out.println("\nОшибка: " + e.getMessage());
+        }
+
+        scanner.close();
+    }
+
 }
